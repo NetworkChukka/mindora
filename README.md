@@ -56,7 +56,7 @@ Operator: Kasun              Operator: Sanduni                Operator: Nimal
 
 ### 1. Prerequisites
 - **Node.js**: v18.0 or higher ([Download Node.js](https://nodejs.org))
-- **MongoDB Community Server**: Running locally on `127.0.0.1:27017`
+- **MongoDB Community Server**: Running locally on `127.0.0.1:27017` ([Download Mongodb ](https://www.mongodb.com/try/download/community))
 
 ### 2. Start the Application
 Simply double-click:
