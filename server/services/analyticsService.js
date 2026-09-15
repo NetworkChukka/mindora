@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const StudentRegistration = require("../models/StudentRegistration");
+const TeacherRegistration = require("../models/TeacherRegistration");
 const School = require("../models/School");
 const EventSettings = require("../models/EventSettings");
 
@@ -53,7 +54,14 @@ const getDashboardStats = async (filterQuery = {}) => {
     operatorStats,
     hourlyStats,
     todayCount,
-    totalSchoolsCount
+    totalSchoolsCount,
+    
+    // Teacher aggregates
+    teacherSummaryResult,
+    topSchoolsTeacher,
+    operatorStatsTeacher,
+    hourlyStatsTeacher,
+    todayCountTeacher
   ] = await Promise.all([
     // 1. Overall totals matching current filter
     StudentRegistration.aggregate([
@@ -137,7 +145,62 @@ const getDashboardStats = async (filterQuery = {}) => {
     }),
 
     // 7. Total active schools registered in system
-    School.countDocuments({ status: "active" })
+    School.countDocuments({ status: "active" }),
+
+    // 8. Teacher Summary
+    TeacherRegistration.aggregate([
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: null,
+          totalTeachers: { $sum: 1 },
+          uniqueSchools: { $addToSet: "$schoolId" }
+        }
+      }
+    ]),
+
+    // 9. Breakdown by School (Teachers)
+    TeacherRegistration.aggregate([
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: "$schoolId",
+          schoolName: { $first: "$schoolNameSnapshot" },
+          total: { $sum: 1 }
+        }
+      }
+    ]),
+
+    // 10. Operator Desk counts (Teachers)
+    TeacherRegistration.aggregate([
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: "$registeredBy",
+          operatorName: { $first: "$registeredByName" },
+          total: { $sum: 1 }
+        }
+      }
+    ]),
+
+    // 11. Hourly registrations (Teachers)
+    TeacherRegistration.aggregate([
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%H:00", date: "$createdAt", timezone: "+05:30" }
+          },
+          count: { $sum: 1 }
+        }
+      }
+    ]),
+
+    // 12. Today's Teacher Count
+    TeacherRegistration.countDocuments({
+      deleted: false,
+      visitDate: { $in: [todayStr, (settings && settings.activeEventDate) || todayStr] }
+    })
   ]);
 
   const summary = countsSummary[0] || {
@@ -146,6 +209,13 @@ const getDashboardStats = async (filterQuery = {}) => {
     alStudents: 0,
     uniqueSchools: []
   };
+
+  const tSummary = teacherSummaryResult[0] || {
+    totalTeachers: 0,
+    uniqueSchools: []
+  };
+
+  const totalVisitors = summary.totalStudents + tSummary.totalTeachers;
 
   // Build grade map 6..13
   const grades = [6, 7, 8, 9, 10, 11, 12, 13].map((g) => {
@@ -157,10 +227,92 @@ const getDashboardStats = async (filterQuery = {}) => {
     };
   });
 
-  // Calculate peak registration hour
+  // Merge Schools
+  const schoolMap = new Map();
+  topSchools.forEach(s => {
+    schoolMap.set(String(s._id), {
+      _id: s._id,
+      schoolName: s.schoolName,
+      students: s.total,
+      teachers: 0,
+      total: s.total,
+      ol: s.ol,
+      al: s.al
+    });
+  });
+  topSchoolsTeacher.forEach(s => {
+    const id = String(s._id);
+    if (schoolMap.has(id)) {
+      const existing = schoolMap.get(id);
+      existing.teachers = s.total;
+      existing.total += s.total;
+    } else {
+      schoolMap.set(id, {
+        _id: s._id,
+        schoolName: s.schoolName,
+        students: 0,
+        teachers: s.total,
+        total: s.total,
+        ol: 0,
+        al: 0
+      });
+    }
+  });
+  const mergedSchools = Array.from(schoolMap.values()).sort((a, b) => b.total - a.total).slice(0, 50);
+
+  // Merge Operators
+  const operatorMap = new Map();
+  operatorStats.forEach(o => {
+    operatorMap.set(String(o._id), {
+      _id: o._id,
+      operatorName: o.operatorName,
+      students: o.total,
+      teachers: 0,
+      total: o.total,
+      ol: o.ol,
+      al: o.al
+    });
+  });
+  operatorStatsTeacher.forEach(o => {
+    const id = String(o._id);
+    if (operatorMap.has(id)) {
+      const existing = operatorMap.get(id);
+      existing.teachers = o.total;
+      existing.total += o.total;
+    } else {
+      operatorMap.set(id, {
+        _id: o._id,
+        operatorName: o.operatorName,
+        students: 0,
+        teachers: o.total,
+        total: o.total,
+        ol: 0,
+        al: 0
+      });
+    }
+  });
+  const mergedOperators = Array.from(operatorMap.values()).sort((a, b) => b.total - a.total);
+
+  // Merge Hourly
+  const hourlyMap = new Map();
+  hourlyStats.forEach(h => {
+    hourlyMap.set(h._id, { _id: h._id, students: h.count, teachers: 0, count: h.count });
+  });
+  hourlyStatsTeacher.forEach(h => {
+    if (hourlyMap.has(h._id)) {
+      const existing = hourlyMap.get(h._id);
+      existing.teachers = h.count;
+      existing.count += h.count;
+    } else {
+      hourlyMap.set(h._id, { _id: h._id, students: 0, teachers: h.count, count: h.count });
+    }
+  });
+  const mergedHourly = Array.from(hourlyMap.values()).sort((a, b) => a._id.localeCompare(b._id));
+
+  // Calculate peak registration hour from merged
   let peakHour = "N/A";
   let peakCount = 0;
-  hourlyStats.forEach((h) => {
+  mergedHourly.forEach((h) => {
     if (h.count > peakCount) {
       peakCount = h.count;
       peakHour = h._id;
@@ -168,18 +320,22 @@ const getDashboardStats = async (filterQuery = {}) => {
   });
 
   return {
+    totalVisitors,
     totalStudents: summary.totalStudents,
+    totalTeachers: tSummary.totalTeachers,
     olStudents: summary.olStudents,
     alStudents: summary.alStudents,
     olPercentage: summary.totalStudents > 0 ? ((summary.olStudents / summary.totalStudents) * 100).toFixed(1) : "0.0",
     alPercentage: summary.totalStudents > 0 ? ((summary.alStudents / summary.totalStudents) * 100).toFixed(1) : "0.0",
-    activeSchoolsCount: summary.uniqueSchools.length,
+    activeSchoolsCount: new Set([...summary.uniqueSchools.map(s=>String(s)), ...tSummary.uniqueSchools.map(s=>String(s))]).size,
     totalSchoolsCount,
-    todayRegistrations: todayCount,
+    todayRegistrations: todayCount + todayCountTeacher,
+    todayStudents: todayCount,
+    todayTeachers: todayCountTeacher,
     grades,
-    schools: topSchools,
-    operators: operatorStats,
-    hourly: hourlyStats,
+    schools: mergedSchools,
+    operators: mergedOperators,
+    hourly: mergedHourly,
     peakHour,
     peakCount,
     settings: {

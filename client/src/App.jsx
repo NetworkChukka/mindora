@@ -20,6 +20,7 @@ import { RegisterPage } from "./pages/RegisterPage";
 // Admin Pages
 import { DashboardPage } from "./pages/admin/DashboardPage";
 import { RegistrationsPage } from "./pages/admin/RegistrationsPage";
+import { TeachersPage } from "./pages/admin/TeachersPage";
 import { SchoolsPage } from "./pages/admin/SchoolsPage";
 import { UsersPage } from "./pages/admin/UsersPage";
 import { AnalyticsPage } from "./pages/admin/AnalyticsPage";
@@ -120,6 +121,7 @@ export const App = () => {
                 <Route index element={<Navigate to="/admin/dashboard" replace />} />
                 <Route path="dashboard" element={<DashboardPage />} />
                 <Route path="registrations" element={<RegistrationsPage />} />
+                <Route path="teachers" element={<TeachersPage />} />
                 <Route path="schools" element={<SchoolsPage />} />
                 <Route path="users" element={<UsersPage />} />
                 <Route path="analytics" element={<AnalyticsPage />} />

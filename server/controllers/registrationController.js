@@ -275,6 +275,7 @@ const softDelete = async (req, res) => {
 const getRecent = async (req, res) => {
   try {
     const EventSettings = require("../models/EventSettings");
+    const TeacherRegistration = require("../models/TeacherRegistration");
     const settings = (await EventSettings.findOne()) || {};
     const todayStr = new Date().toISOString().split("T")[0];
     const activeDate = settings.activeEventDate || todayStr;
@@ -287,29 +288,59 @@ const getRecent = async (req, res) => {
       query.registeredBy = req.user._id;
     }
 
-    const [recentList, todayCount, todayOlCount, todayAlCount, myTodayCount] = await Promise.all([
-      StudentRegistration.find(query)
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .lean(),
+    const [
+      recentStudents,
+      recentTeachers,
+      todayStudentCount,
+      todayTeacherCount,
+      todayOlCount,
+      todayAlCount,
+      myTodayStudentCount,
+      myTodayTeacherCount
+    ] = await Promise.all([
+      StudentRegistration.find(query).sort({ createdAt: -1 }).limit(10).lean(),
+      TeacherRegistration.find(query).sort({ createdAt: -1 }).limit(10).lean(),
       StudentRegistration.countDocuments({ deleted: false, visitDate: dateMatch }),
+      TeacherRegistration.countDocuments({ deleted: false, visitDate: dateMatch }),
       StudentRegistration.countDocuments({ deleted: false, visitDate: dateMatch, educationLevel: "O/L" }),
       StudentRegistration.countDocuments({ deleted: false, visitDate: dateMatch, educationLevel: "A/L" }),
       StudentRegistration.countDocuments({
         deleted: false,
         visitDate: dateMatch,
         registeredBy: req.user._id
+      }),
+      TeacherRegistration.countDocuments({
+        deleted: false,
+        visitDate: dateMatch,
+        registeredBy: req.user._id
       })
     ]);
+
+    // Format teachers to have similar structure for the UI list
+    const mappedTeachers = recentTeachers.map(t => ({
+      ...t,
+      registrationNumber: t.teacherRegistrationNumber,
+      studentName: t.teacherName,
+      educationLevel: "Teacher"
+    }));
+
+    // Merge and sort
+    const recentList = [...recentStudents, ...mappedTeachers]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 10);
 
     return res.json({
       success: true,
       data: {
         recent: recentList,
-        todayCount,
+        todayCount: todayStudentCount + todayTeacherCount,
+        todayStudentCount,
+        todayTeacherCount,
         todayOlCount,
         todayAlCount,
-        myTodayCount,
+        myTodayCount: myTodayStudentCount + myTodayTeacherCount,
+        myTodayStudentCount,
+        myTodayTeacherCount,
         activeEventDate: activeDate
       }
     });

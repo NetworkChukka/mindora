@@ -26,6 +26,7 @@ export const RegisterPage = () => {
   const { success, error, warning } = useToast();
 
   // Form states
+  const [visitorType, setVisitorType] = useState("student");
   const [studentName, setStudentName] = useState("");
   const [selectedSchoolId, setSelectedSchoolId] = useState("");
   const [selectedSchool, setSelectedSchool] = useState(null);
@@ -47,12 +48,12 @@ export const RegisterPage = () => {
   // Data lists
   const [schools, setSchools] = useState([]);
   const [recentList, setRecentList] = useState([]);
-  const [todayCounts, setTodayCounts] = useState({ total: 0, ol: 0, al: 0 });
+  const [todayCounts, setTodayCounts] = useState({ total: 0, students: 0, teachers: 0, ol: 0, al: 0 });
 
   const nameInputRef = useRef(null);
 
   // Calculate Level dynamically from Grade
-  const educationLevel = grade >= 12 ? "A/L" : "O/L";
+  const educationLevel = visitorType === "teacher" ? "Teacher" : (grade >= 12 ? "A/L" : "O/L");
 
   // Fetch initial schools & stats
   const fetchSchools = async () => {
@@ -81,6 +82,8 @@ export const RegisterPage = () => {
         }
         setTodayCounts({
           total: data.todayCount || 0,
+          students: data.todayStudentCount || 0,
+          teachers: data.todayTeacherCount || 0,
           ol: data.todayOlCount || 0,
           al: data.todayAlCount || 0
         });
@@ -89,7 +92,9 @@ export const RegisterPage = () => {
       if (statsRes.status === "fulfilled" && statsRes.value.data.success) {
         const stats = statsRes.value.data.data;
         setTodayCounts({
-          total: stats.totalStudents,
+          total: stats.todayRegistrations || stats.totalStudents,
+          students: stats.todayStudents || stats.totalStudents,
+          teachers: stats.todayTeachers || 0,
           ol: stats.olStudents,
           al: stats.alStudents
         });
@@ -136,20 +141,32 @@ export const RegisterPage = () => {
     const handleStudentRegistered = (reg) => {
       // Update counters in real time
       setTodayCounts((prev) => ({
+        ...prev,
         total: prev.total + 1,
+        students: prev.students + 1,
         ol: reg.educationLevel === "O/L" ? prev.ol + 1 : prev.ol,
         al: reg.educationLevel === "A/L" ? prev.al + 1 : prev.al
+      }));
+    };
+
+    const handleTeacherRegistered = (reg) => {
+      setTodayCounts((prev) => ({
+        ...prev,
+        total: prev.total + 1,
+        teachers: prev.teachers + 1
       }));
     };
 
     socket.on("school:created", handleSchoolCreated);
     socket.on("school:updated", handleSchoolUpdated);
     socket.on("student:registered", handleStudentRegistered);
+    socket.on("teacher:registered", handleTeacherRegistered);
 
     return () => {
       socket.off("school:created", handleSchoolCreated);
       socket.off("school:updated", handleSchoolUpdated);
       socket.off("student:registered", handleStudentRegistered);
+      socket.off("teacher:registered", handleTeacherRegistered);
     };
   }, [socket]);
 
@@ -158,7 +175,7 @@ export const RegisterPage = () => {
     if (e) e.preventDefault();
 
     if (!studentName.trim()) {
-      error("Student name is required");
+      error(visitorType === "teacher" ? "Teacher name is required" : "Student name is required");
       nameInputRef.current?.focus();
       return;
     }
@@ -167,28 +184,50 @@ export const RegisterPage = () => {
       error("Please select or add a school");
       return;
     }
+    
+    if (visitorType === "teacher" && !phoneNumber.trim()) {
+      error("Phone number is required for teachers");
+      return;
+    }
 
     setLoading(true);
 
     try {
+      const endpoint = visitorType === "teacher" ? "/teachers" : "/registrations";
       const payload = {
-        studentName: studentName.trim(),
         schoolId: selectedSchoolId,
-        grade: parseInt(grade, 10),
         phoneNumber: phoneNumber.trim(),
         visitDate,
         bypassDuplicate
       };
+      
+      if (visitorType === "teacher") {
+        payload.teacherName = studentName.trim();
+      } else {
+        payload.studentName = studentName.trim();
+        payload.grade = parseInt(grade, 10);
+      }
 
-      const res = await api.post("/registrations", payload);
+      const res = await api.post(endpoint, payload);
 
       if (res.data.success) {
         const newRecord = res.data.data;
-        setLastRegistered(newRecord);
-        success(`✓ Registered: ${newRecord.studentName} (${newRecord.registrationNumber})`);
+        setLastRegistered({
+          ...newRecord,
+          isTeacher: visitorType === "teacher",
+          displayName: newRecord.studentName || newRecord.teacherName,
+          displayRegNum: newRecord.registrationNumber || newRecord.teacherRegistrationNumber
+        });
+        success(`✓ Registered: ${newRecord.studentName || newRecord.teacherName}`);
 
         // Add to recent registrations
-        setRecentList((prev) => [newRecord, ...prev.slice(0, 9)]);
+        const mappedRecent = {
+          ...newRecord,
+          registrationNumber: newRecord.registrationNumber || newRecord.teacherRegistrationNumber,
+          studentName: newRecord.studentName || newRecord.teacherName,
+          educationLevel: visitorType === "teacher" ? "Teacher" : newRecord.educationLevel
+        };
+        setRecentList((prev) => [mappedRecent, ...prev.slice(0, 9)]);
 
         // Reset form fields
         setStudentName("");
@@ -234,10 +273,12 @@ export const RegisterPage = () => {
                 ✓ REGISTERED SUCCESSFULLY
               </div>
               <div className="text-lg font-black tracking-tight">
-                {lastRegistered.registrationNumber} — {lastRegistered.studentName}
+                {lastRegistered.displayRegNum} — {lastRegistered.displayName}
               </div>
               <div className="text-xs font-medium text-emerald-100">
-                {lastRegistered.schoolNameSnapshot} • Grade {lastRegistered.grade} ({lastRegistered.educationLevel})
+                {lastRegistered.schoolNameSnapshot} 
+                {!lastRegistered.isTeacher && ` • Grade ${lastRegistered.grade} (${lastRegistered.educationLevel})`}
+                {lastRegistered.isTeacher && ` • Teacher`}
               </div>
             </div>
           </div>
@@ -256,7 +297,7 @@ export const RegisterPage = () => {
           <div className="flex items-center justify-between pb-5 border-b border-slate-100 mb-6">
             <div>
               <h2 className="text-xl font-extrabold text-navy-800 tracking-tight">
-                Student Registration
+                Visitor Registration
               </h2>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
                 Quick entry desk form • Sri Lanka General Education
@@ -269,11 +310,37 @@ export const RegisterPage = () => {
           </div>
 
           <form onSubmit={(e) => handleSubmit(e, false)} className="space-y-5">
-            {/* Student Name */}
+            {/* Visitor Type Toggle */}
+            <div className="flex p-1 bg-slate-100 rounded-xl">
+              <button
+                type="button"
+                onClick={() => { setVisitorType("student"); nameInputRef.current?.focus(); }}
+                className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all ${
+                  visitorType === "student"
+                    ? "bg-white text-brand-green shadow-sm ring-1 ring-slate-200"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                STUDENT
+              </button>
+              <button
+                type="button"
+                onClick={() => { setVisitorType("teacher"); nameInputRef.current?.focus(); }}
+                className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all ${
+                  visitorType === "teacher"
+                    ? "bg-white text-purple-600 shadow-sm ring-1 ring-slate-200"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                TEACHER
+              </button>
+            </div>
+
+            {/* Visitor Name */}
             <Input
               inputRef={nameInputRef}
-              label="Student Name"
-              placeholder="e.g. Kasun Perera, Anuki Silva"
+              label={visitorType === "teacher" ? "Teacher Name" : "Student Name"}
+              placeholder={visitorType === "teacher" ? "e.g. Mr. Sunil Perera" : "e.g. Kasun Perera, Anuki Silva"}
               value={studentName}
               onChange={(e) => setStudentName(e.target.value)}
               required
@@ -294,60 +361,62 @@ export const RegisterPage = () => {
             />
 
             {/* Grade Selection with Auto Education Level Indicator */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold text-slate-700 flex items-center justify-between">
-                  <span>
-                    Grade <span className="text-rose-500">*</span>
-                  </span>
-                </label>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {[6, 7, 8, 9, 10, 11, 12, 13].map((g) => {
-                    const isSelected = grade === g;
-                    return (
-                      <button
-                        key={g}
-                        type="button"
-                        onClick={() => setGrade(g)}
-                        className={`py-2.5 rounded-xl font-extrabold text-sm transition-all ${
-                          isSelected
-                            ? g >= 12
-                              ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                              : "bg-navy-700 text-white shadow-md shadow-navy-800/20"
-                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                        }`}
-                      >
-                        {g}
-                      </button>
-                    );
-                  })}
+            {visitorType === "student" && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-semibold text-slate-700 flex items-center justify-between">
+                    <span>
+                      Grade <span className="text-rose-500">*</span>
+                    </span>
+                  </label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[6, 7, 8, 9, 10, 11, 12, 13].map((g) => {
+                      const isSelected = grade === g;
+                      return (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => setGrade(g)}
+                          className={`py-2.5 rounded-xl font-extrabold text-sm transition-all ${
+                            isSelected
+                              ? g >= 12
+                                ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                                : "bg-navy-700 text-white shadow-md shadow-navy-800/20"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          }`}
+                        >
+                          {g}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
 
-              {/* Dynamic Education Level Indicator */}
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  Calculated Education Level
-                </span>
-                <div
-                  className={`flex items-center justify-between px-4 py-3 rounded-2xl border ${
-                    educationLevel === "O/L"
-                      ? "bg-emerald-50 border-emerald-200 text-emerald-900"
-                      : "bg-blue-50 border-blue-200 text-blue-900"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <GraduationCap className="w-5 h-5" />
-                    <span className="text-xs font-bold uppercase">
-                      {educationLevel === "O/L" ? "Ordinary Level" : "Advanced Level"}
+                {/* Dynamic Education Level Indicator */}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    Calculated Education Level
+                  </span>
+                  <div
+                    className={`flex items-center justify-between px-4 py-3 rounded-2xl border ${
+                      educationLevel === "O/L"
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                        : "bg-blue-50 border-blue-200 text-blue-900"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <GraduationCap className="w-5 h-5" />
+                      <span className="text-xs font-bold uppercase">
+                        {educationLevel === "O/L" ? "Ordinary Level" : "Advanced Level"}
+                      </span>
+                    </div>
+                    <span className="text-lg font-black tracking-wider px-2.5 py-0.5 bg-white rounded-lg shadow-sm">
+                      {educationLevel}
                     </span>
                   </div>
-                  <span className="text-lg font-black tracking-wider px-2.5 py-0.5 bg-white rounded-lg shadow-sm">
-                    {educationLevel}
-                  </span>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Optional Phone Number */}
             <Input
@@ -370,7 +439,7 @@ export const RegisterPage = () => {
                 className="w-full text-lg shadow-lg"
                 icon={<Sparkles className="w-5 h-5 text-brand-green" />}
               >
-                Register Student
+                {visitorType === "teacher" ? "Register Teacher" : "Register Student"}
               </Button>
             </div>
           </form>
@@ -397,14 +466,25 @@ export const RegisterPage = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-4 border-t border-white/10">
+            <div className="grid grid-cols-2 gap-3 pt-4 border-t border-white/10 mb-3">
               <div className="bg-white/10 p-3 rounded-2xl text-center">
-                <div className="text-xs text-emerald-300 font-bold">O/L Count</div>
-                <div className="text-xl font-extrabold text-white mt-0.5">{todayCounts.ol}</div>
+                <div className="text-xs text-slate-300 font-bold">Students</div>
+                <div className="text-xl font-extrabold text-white mt-0.5">{todayCounts.students}</div>
               </div>
               <div className="bg-white/10 p-3 rounded-2xl text-center">
-                <div className="text-xs text-blue-300 font-bold">A/L Count</div>
-                <div className="text-xl font-extrabold text-white mt-0.5">{todayCounts.al}</div>
+                <div className="text-xs text-slate-300 font-bold">Teachers</div>
+                <div className="text-xl font-extrabold text-white mt-0.5">{todayCounts.teachers}</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white/5 p-2 rounded-xl text-center">
+                <div className="text-[10px] text-emerald-300 font-bold">O/L</div>
+                <div className="text-base font-extrabold text-white mt-0.5">{todayCounts.ol}</div>
+              </div>
+              <div className="bg-white/5 p-2 rounded-xl text-center">
+                <div className="text-[10px] text-blue-300 font-bold">A/L</div>
+                <div className="text-base font-extrabold text-white mt-0.5">{todayCounts.al}</div>
               </div>
             </div>
           </div>
@@ -426,16 +506,18 @@ export const RegisterPage = () => {
                 recentList.map((item) => (
                   <div key={item._id || item.registrationNumber} className="py-2.5 flex items-center justify-between">
                     <div className="min-w-0 pr-2">
-                      <div className="text-xs font-bold text-slate-900 truncate">
-                        {item.studentName}
+                      <div className="text-xs font-bold text-slate-900 truncate flex items-center gap-1.5">
+                        {item.educationLevel === "Teacher" && <span className="bg-purple-100 text-purple-700 text-[9px] px-1.5 rounded uppercase">Teacher</span>}
+                        {item.studentName || item.teacherName}
                       </div>
-                      <div className="text-[11px] text-slate-500 truncate">
-                        {item.schoolNameSnapshot} • Grade {item.grade}
+                      <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                        {item.schoolNameSnapshot} 
+                        {item.educationLevel !== "Teacher" && ` • Grade ${item.grade}`}
                       </div>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <span className="text-[11px] font-mono font-bold bg-navy-50 text-navy-800 px-2 py-0.5 rounded">
-                        {item.registrationNumber}
+                      <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${item.educationLevel === "Teacher" ? "bg-purple-50 text-purple-700" : "bg-navy-50 text-navy-800"}`}>
+                        {item.registrationNumber || item.teacherRegistrationNumber}
                       </span>
                       <div className="text-[10px] text-slate-400 mt-0.5">
                         {item.educationLevel}

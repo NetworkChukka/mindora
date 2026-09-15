@@ -37,6 +37,7 @@ export const AdminLayout = () => {
     { label: "Dashboard", path: "/admin/dashboard", icon: <LayoutDashboard className="w-5 h-5" /> },
     { label: "Register Student", path: "/register", icon: <UserPlus className="w-5 h-5 text-brand-green" /> },
     { label: "Registrations", path: "/admin/registrations", icon: <GraduationCap className="w-5 h-5" /> },
+    { label: "Teachers", path: "/admin/teachers", icon: <Users className="w-5 h-5" /> },
     { label: "Schools", path: "/admin/schools", icon: <School className="w-5 h-5" /> },
     ...(isAdmin ? [{ label: "Users & Desks", path: "/admin/users", icon: <Users className="w-5 h-5" /> }] : []),
     { label: "Analytics", path: "/admin/analytics", icon: <BarChart3 className="w-5 h-5" /> },

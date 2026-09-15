@@ -35,12 +35,18 @@ export const LiveDisplayPage = () => {
     socket.on("student:registered", handleUpdate);
     socket.on("student:updated", handleUpdate);
     socket.on("student:deleted", handleUpdate);
+    socket.on("teacher:registered", handleUpdate);
+    socket.on("teacher:updated", handleUpdate);
+    socket.on("teacher:deleted", handleUpdate);
     socket.on("school:created", handleUpdate);
 
     return () => {
       socket.off("student:registered", handleUpdate);
       socket.off("student:updated", handleUpdate);
       socket.off("student:deleted", handleUpdate);
+      socket.off("teacher:registered", handleUpdate);
+      socket.off("teacher:updated", handleUpdate);
+      socket.off("teacher:deleted", handleUpdate);
       socket.off("school:created", handleUpdate);
     };
   }, [socket]);
@@ -98,24 +104,52 @@ export const LiveDisplayPage = () => {
       </div>
 
       {/* Main KPI Stats Display */}
-      <div className="my-8 grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="my-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Total Visitors Card */}
-        <div className="md:col-span-2 bg-gradient-to-br from-navy-800 to-navy-900 border border-white/15 p-8 rounded-3xl shadow-2xl flex flex-col justify-between">
+        <div className="bg-gradient-to-br from-navy-800 to-navy-900 border border-white/15 p-8 rounded-3xl shadow-2xl flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-bold tracking-widest text-slate-300 uppercase">
-              TOTAL VISITING STUDENTS
+            <span className="text-xs font-bold tracking-widest text-slate-300 uppercase">
+              TOTAL VISITORS
             </span>
             <div className="p-3 bg-brand-green/20 rounded-2xl text-brand-green">
-              <Users className="w-8 h-8" />
+              <Users className="w-6 h-6" />
             </div>
           </div>
-          <div className="my-6">
-            <div className="text-7xl md:text-8xl font-black tracking-tight text-white font-mono">
-              {stats?.totalStudents?.toLocaleString() || "0"}
+          <div className="my-4">
+            <div className="text-5xl md:text-6xl font-black tracking-tight text-white font-mono">
+              {(stats?.totalVisitors ?? stats?.totalStudents ?? 0).toLocaleString()}
             </div>
           </div>
           <div className="text-xs font-bold text-brand-green uppercase tracking-wider">
-            ● Live Synchronized Visitor Counter
+            Students: {stats?.totalStudents?.toLocaleString() || "0"}
+          </div>
+        </div>
+
+        {/* Teachers Card */}
+        <div className="bg-purple-950/60 border border-purple-500/30 p-8 rounded-3xl shadow-xl flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold tracking-widest text-purple-300 uppercase">
+              TEACHERS
+            </span>
+            <span className="text-xs font-extrabold px-2.5 py-1 bg-purple-500/20 text-purple-300 rounded-lg">
+              Staff
+            </span>
+          </div>
+          <div className="my-4">
+            <div className="text-5xl md:text-6xl font-black text-purple-400 font-mono">
+              {stats?.totalTeachers?.toLocaleString() || "0"}
+            </div>
+            <div className="text-xs font-semibold text-purple-200 mt-1">
+              Visiting Teachers
+            </div>
+          </div>
+          <div className="w-full bg-white/10 rounded-full h-2">
+            <div
+              className="bg-purple-400 h-2 rounded-full transition-all duration-500"
+              style={{
+                width: stats?.totalVisitors ? `${Math.round(((stats?.totalTeachers || 0) / stats.totalVisitors) * 100)}%` : "0%"
+              }}
+            />
           </div>
         </div>
 
@@ -134,7 +168,7 @@ export const LiveDisplayPage = () => {
               {stats?.olStudents?.toLocaleString() || "0"}
             </div>
             <div className="text-xs font-semibold text-emerald-200 mt-1">
-              {stats?.olPercentage || "0.0"}% of visitors
+              {stats?.olPercentage || "0.0"}% of students
             </div>
           </div>
           <div className="w-full bg-white/10 rounded-full h-2">
@@ -160,7 +194,7 @@ export const LiveDisplayPage = () => {
               {stats?.alStudents?.toLocaleString() || "0"}
             </div>
             <div className="text-xs font-semibold text-blue-200 mt-1">
-              {stats?.alPercentage || "0.0"}% of visitors
+              {stats?.alPercentage || "0.0"}% of students
             </div>
           </div>
           <div className="w-full bg-white/10 rounded-full h-2">

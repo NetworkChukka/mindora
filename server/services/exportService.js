@@ -3,6 +3,7 @@ const PDFDocument = require("pdfkit");
 const path = require("path");
 const fs = require("fs");
 const StudentRegistration = require("../models/StudentRegistration");
+const TeacherRegistration = require("../models/TeacherRegistration");
 const School = require("../models/School");
 const { getDashboardStats } = require("./analyticsService");
 
@@ -33,14 +34,31 @@ const generateExcel = async (filterQuery = {}) => {
     .sort({ createdAt: -1 })
     .lean();
 
+  const teacherMatch = { deleted: false };
+  if (filterQuery.schoolId) teacherMatch.schoolId = filterQuery.schoolId;
+  if (filterQuery.registeredBy) teacherMatch.registeredBy = filterQuery.registeredBy;
+  if (filterQuery.dateFilter === "today") {
+    teacherMatch.visitDate = new Date().toISOString().split("T")[0];
+  } else if (filterQuery.dateFilter === "day1") {
+    teacherMatch.visitDate = stats.settings.eventDay1Date;
+  } else if (filterQuery.dateFilter === "day2") {
+    teacherMatch.visitDate = stats.settings.eventDay2Date;
+  } else if (filterQuery.customDate) {
+    teacherMatch.visitDate = filterQuery.customDate;
+  }
+
+  const teacherRegistrations = await TeacherRegistration.find(teacherMatch)
+    .sort({ createdAt: -1 })
+    .lean();
+
   const brandNavy = "FF1E224F";
   const brandGreen = "FF7CB342";
   const headerFont = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
 
   // ----------------------------------------------------
-  // Sheet 1: Registrations
+  // Sheet 1: Student Registrations
   // ----------------------------------------------------
-  const regSheet = workbook.addWorksheet("Registrations", {
+  const regSheet = workbook.addWorksheet("Student Registrations", {
     views: [{ state: "frozen", ySplit: 1 }]
   });
 
@@ -78,11 +96,47 @@ const generateExcel = async (filterQuery = {}) => {
   });
 
   // ----------------------------------------------------
-  // Sheet 2: Summary
+  // Sheet 2: Teacher Registrations
+  // ----------------------------------------------------
+  const tchSheet = workbook.addWorksheet("Teacher Registrations", {
+    views: [{ state: "frozen", ySplit: 1 }]
+  });
+
+  tchSheet.columns = [
+    { header: "Registration ID", key: "teacherRegistrationNumber", width: 18 },
+    { header: "Teacher Name", key: "teacherName", width: 28 },
+    { header: "School", key: "schoolNameSnapshot", width: 32 },
+    { header: "Phone Number", key: "phoneNumber", width: 18 },
+    { header: "Visit Date", key: "visitDate", width: 14 },
+    { header: "Registered By", key: "registeredByName", width: 18 },
+    { header: "Registration Time", key: "time", width: 22 }
+  ];
+
+  tchSheet.getRow(1).eachCell((cell) => {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: brandNavy } };
+    cell.font = headerFont;
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+  });
+
+  teacherRegistrations.forEach((tch) => {
+    const regDate = new Date(tch.createdAt);
+    tchSheet.addRow({
+      teacherRegistrationNumber: tch.teacherRegistrationNumber,
+      teacherName: tch.teacherName,
+      schoolNameSnapshot: tch.schoolNameSnapshot,
+      phoneNumber: tch.phoneNumber || "N/A",
+      visitDate: tch.visitDate,
+      registeredByName: tch.registeredByName,
+      time: regDate.toLocaleTimeString("en-GB", { hour12: true })
+    });
+  });
+
+  // ----------------------------------------------------
+  // Sheet 3: Summary
   // ----------------------------------------------------
   const sumSheet = workbook.addWorksheet("Summary");
   sumSheet.columns = [
-    { header: "Metric", key: "metric", width: 30 },
+    { header: "Metric", key: "metric", width: 32 },
     { header: "Value", key: "value", width: 25 }
   ];
   sumSheet.getRow(1).eachCell((cell) => {
@@ -93,7 +147,9 @@ const generateExcel = async (filterQuery = {}) => {
   sumSheet.addRows([
     { metric: "Event Name", value: stats.settings.eventName },
     { metric: "Event Subtitle", value: stats.settings.subtitle },
+    { metric: "TOTAL VISITORS", value: stats.totalVisitors },
     { metric: "Total Registered Students", value: stats.totalStudents },
+    { metric: "Total Registered Teachers", value: stats.totalTeachers },
     { metric: "O/L Students (Grades 6–11)", value: `${stats.olStudents} (${stats.olPercentage}%)` },
     { metric: "A/L Students (Grades 12–13)", value: `${stats.alStudents} (${stats.alPercentage}%)` },
     { metric: "Total Visiting Schools", value: stats.activeSchoolsCount },
@@ -288,21 +344,32 @@ const generatePDF = async (filterQuery = {}) => {
 
   // Summary KPI Boxes
   const topY = 120;
-  doc.rect(40, topY, 115, 55).fillAndStroke("#F1F5F9", "#CBD5E1");
-  doc.fillColor("#1E224F").fontSize(9).text("TOTAL STUDENTS", 45, topY + 8);
-  doc.fontSize(18).fillColor("#1E224F").text(String(stats.totalStudents), 45, topY + 24, { bold: true });
+  const boxWidth = 95;
+  
+  // Total Visitors
+  doc.rect(40, topY, boxWidth, 55).fillAndStroke("#F1F5F9", "#CBD5E1");
+  doc.fillColor("#1E224F").fontSize(8).text("TOTAL VISITORS", 45, topY + 8);
+  doc.fontSize(16).fillColor("#1E224F").text(String(stats.totalVisitors || stats.totalStudents), 45, topY + 24, { bold: true });
 
-  doc.rect(170, topY, 115, 55).fillAndStroke("#F0FDF4", "#86EFAC");
-  doc.fillColor("#15803D").fontSize(9).text("O/L STUDENTS", 175, topY + 8);
-  doc.fontSize(18).fillColor("#15803D").text(`${stats.olStudents} (${stats.olPercentage}%)`, 175, topY + 24, { bold: true });
+  // Students
+  doc.rect(142, topY, boxWidth, 55).fillAndStroke("#F8FAFC", "#E2E8F0");
+  doc.fillColor("#334155").fontSize(8).text("STUDENTS", 147, topY + 8);
+  doc.fontSize(16).fillColor("#334155").text(String(stats.totalStudents), 147, topY + 24, { bold: true });
 
-  doc.rect(300, topY, 115, 55).fillAndStroke("#EFF6FF", "#93C5FD");
-  doc.fillColor("#1D4ED8").fontSize(9).text("A/L STUDENTS", 305, topY + 8);
-  doc.fontSize(18).fillColor("#1D4ED8").text(`${stats.alStudents} (${stats.alPercentage}%)`, 305, topY + 24, { bold: true });
+  // Teachers
+  doc.rect(244, topY, boxWidth, 55).fillAndStroke("#FAF5FF", "#E9D5FF");
+  doc.fillColor("#6B21A8").fontSize(8).text("TEACHERS", 249, topY + 8);
+  doc.fontSize(16).fillColor("#6B21A8").text(String(stats.totalTeachers || 0), 249, topY + 24, { bold: true });
 
-  doc.rect(430, topY, 125, 55).fillAndStroke("#F8FAFC", "#E2E8F0");
-  doc.fillColor("#334155").fontSize(9).text("VISITING SCHOOLS", 435, topY + 8);
-  doc.fontSize(18).fillColor("#334155").text(String(stats.activeSchoolsCount), 435, topY + 24, { bold: true });
+  // O/L Students
+  doc.rect(346, topY, boxWidth, 55).fillAndStroke("#F0FDF4", "#86EFAC");
+  doc.fillColor("#15803D").fontSize(8).text("O/L STUDENTS", 351, topY + 8);
+  doc.fontSize(14).fillColor("#15803D").text(`${stats.olStudents}`, 351, topY + 24, { bold: true });
+
+  // A/L Students
+  doc.rect(448, topY, 107, 55).fillAndStroke("#EFF6FF", "#93C5FD");
+  doc.fillColor("#1D4ED8").fontSize(8).text("A/L STUDENTS", 453, topY + 8);
+  doc.fontSize(14).fillColor("#1D4ED8").text(`${stats.alStudents}`, 453, topY + 24, { bold: true });
 
   // Grade Breakdown Table
   let currentY = 195;

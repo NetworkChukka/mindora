@@ -61,7 +61,9 @@ const getPublicDisplayStats = async (req, res) => {
     return res.json({
       success: true,
       data: {
+        totalVisitors: stats.totalVisitors,
         totalStudents: stats.totalStudents,
+        totalTeachers: stats.totalTeachers,
         olStudents: stats.olStudents,
         alStudents: stats.alStudents,
         olPercentage: stats.olPercentage,

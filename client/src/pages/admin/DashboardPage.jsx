@@ -61,12 +61,18 @@ export const DashboardPage = () => {
     socket.on("student:registered", handleUpdate);
     socket.on("student:updated", handleUpdate);
     socket.on("student:deleted", handleUpdate);
+    socket.on("teacher:registered", handleUpdate);
+    socket.on("teacher:updated", handleUpdate);
+    socket.on("teacher:deleted", handleUpdate);
     socket.on("school:created", handleUpdate);
 
     return () => {
       socket.off("student:registered", handleUpdate);
       socket.off("student:updated", handleUpdate);
       socket.off("student:deleted", handleUpdate);
+      socket.off("teacher:registered", handleUpdate);
+      socket.off("teacher:updated", handleUpdate);
+      socket.off("teacher:deleted", handleUpdate);
       socket.off("school:created", handleUpdate);
     };
   }, [socket, dateFilter, customDate]);
@@ -138,37 +144,45 @@ export const DashboardPage = () => {
       </div>
 
       {/* KPI Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-5">
         <StatCard
-          title="Total Registered Students"
-          value={stats?.totalStudents?.toLocaleString() || "0"}
-          subtitle="All connected desks"
+          title="Total Visitors"
+          value={(stats?.totalVisitors ?? stats?.totalStudents ?? 0).toLocaleString()}
+          subtitle="Students + Teachers"
           icon={<Users className="w-6 h-6" />}
           variant="primary"
         />
 
         <StatCard
-          title="O/L Students (Grades 6–11)"
+          title="Total Students"
+          value={stats?.totalStudents?.toLocaleString() || "0"}
+          subtitle="All connected desks"
+          icon={<GraduationCap className="w-6 h-6" />}
+          variant="default"
+        />
+
+        <StatCard
+          title="Total Teachers"
+          value={stats?.totalTeachers?.toLocaleString() || "0"}
+          subtitle="Visiting teachers"
+          icon={<Users className="w-6 h-6" />}
+          variant="default"
+        />
+
+        <StatCard
+          title="O/L Students (6–11)"
           value={stats?.olStudents?.toLocaleString() || "0"}
-          subtitle={`${stats?.olPercentage || "0.0"}% of total attendance`}
+          subtitle={`${stats?.olPercentage || "0.0"}% of students`}
           icon={<GraduationCap className="w-6 h-6" />}
           variant="green"
         />
 
         <StatCard
-          title="A/L Students (Grades 12–13)"
+          title="A/L Students (12–13)"
           value={stats?.alStudents?.toLocaleString() || "0"}
-          subtitle={`${stats?.alPercentage || "0.0"}% of total attendance`}
+          subtitle={`${stats?.alPercentage || "0.0"}% of students`}
           icon={<GraduationCap className="w-6 h-6" />}
           variant="blue"
-        />
-
-        <StatCard
-          title="Visiting Schools"
-          value={stats?.activeSchoolsCount?.toLocaleString() || "0"}
-          subtitle={`Out of ${stats?.totalSchoolsCount || 0} registered schools`}
-          icon={<School className="w-6 h-6" />}
-          variant="default"
         />
       </div>
 
