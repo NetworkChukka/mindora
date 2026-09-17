@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:latest
+    container_name: mindora-db
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mindora-mongo-data:/data/db
+
+  mindora-app:
+    build: .
+    container_name: mindora-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - MONGODB_URI=mongodb://mongo:27017/mindora
+    depends_on:
+      - mongo
+
+volumes:
+  mindora-mongo-data:
