@@ -140,4 +140,7 @@ if (require.main === module) {
   startServer();
 }
 
-module.exports = { app, server, startServer };
+module.exports = app;
+module.exports.app = app;
+module.exports.server = server;
+module.exports.startServer = startServer;
