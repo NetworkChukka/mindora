@@ -10,6 +10,7 @@
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "build:client": "cd client && npm run build",
     "build": "npm run build:client",
+    "desktop": "electron desktop/main.js",
     "seed": "node scripts/seed.js",
     "test": "node tests/acceptance.test.js"
   },
