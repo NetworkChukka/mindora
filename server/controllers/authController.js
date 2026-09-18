@@ -103,12 +103,35 @@ const login = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ username: username.trim().toLowerCase() });
+    let user = await User.findOne({ username: username.trim().toLowerCase() });
+
+    // If database is empty (0 users), auto-create default accounts on first login attempt
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid username or password"
-      });
+      const userCount = await User.countDocuments();
+      if (userCount === 0 && username.trim().toLowerCase() === "admin") {
+        const adminPass = await User.hashPassword("admin123");
+        user = await User.create({
+          fullName: "Exhibition Administrator",
+          username: "admin",
+          passwordHash: adminPass,
+          role: "admin",
+          status: "active"
+        });
+
+        // Also create default desk operators & viewer
+        const deskPass = await User.hashPassword("desk123");
+        const viewPass = await User.hashPassword("view123");
+        await User.create([
+          { fullName: "Desk 01", username: "desk01", passwordHash: deskPass, role: "operator", status: "active" },
+          { fullName: "Desk 02", username: "desk02", passwordHash: deskPass, role: "operator", status: "active" },
+          { fullName: "Exhibition Viewer", username: "viewer", passwordHash: viewPass, role: "viewer", status: "active" }
+        ]);
+      } else {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid username or password"
+        });
+      }
     }
 
     if (user.status !== "active") {
